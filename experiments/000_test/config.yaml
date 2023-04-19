@@ -1,0 +1,43 @@
+training:
+  batch_size: 4
+  learning_rate: 0.001
+  optimizer: "Adam"
+  seed: 0
+  nw: 0
+  epochs: 100
+  class_weights: # should be a list
+
+log:
+  log_every_n_steps: 5
+
+
+neuralnet:
+  name: "Unet"
+  encoder_name: "resnet18"
+  encoder_weights:
+  in_channels: 3
+  classes: 2
+
+dataset:
+  name: "BreastCancer"
+  
+  augmentation: 
+    name: "default"
+    crop_size: 224
+
+  train: 
+    images: 
+      path: "data/breast_cancer/train/images"
+      ext: ".tif"
+    labels:
+      path: "data/breast_cancer/train/labels"
+      ext: ".TIF"
+  
+  test: 
+    images: 
+      path: "data/breast_cancer/test/images"
+      ext: ".tif"
+    labels:
+      path: "data/breast_cancer/test/labels"
+      ext: ".TIF"
+  

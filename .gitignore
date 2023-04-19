@@ -1,5 +1,4 @@
 /.vscode
 /__pycache__
 /data
-/experiments
 /lightning_logs
