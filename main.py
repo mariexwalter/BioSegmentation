@@ -1,6 +1,9 @@
 """
 https://github.com/akshaykulkarni07/pl-sem-seg/blob/master/pl_training.ipynb
 
+TODO: logging
+https://pytorch-lightning.readthedocs.io/en/1.6.1/common/loggers.html
+
 """
 from argparse import ArgumentParser
 from os.path import join
@@ -9,8 +12,11 @@ import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
 import torch
 import torch.nn as nn
+import torch.optim
+import torchmetrics
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.trainer import Trainer
 from torch.utils.data import DataLoader
 
@@ -29,22 +35,55 @@ class BinarySegmentation(pl.LightningModule):
         self.batch_size = conf.training.batch_size
         self.learning_rate = conf.training.learning_rate
         self.loss = nn.CrossEntropyLoss(weight=conf.training.class_weights)
+        self.opt = conf.optimizer.name
+        self.opt_kwargs = (
+            conf.optimizer.kwargs if conf.optimizer.kwargs is not None else {}
+        )
+        self.example_input_array = torch.zeros(*conf.dataset.input_shape)
+
+        self.metrics = {
+            'acc': torchmetrics.Accuracy('binary', num_classes=2),
+            'ji': torchmetrics.JaccardIndex('binary', zero_division=.1),
+        }
 
     def forward(self, x):
         return self.net(x)
 
-    def training_step(self, batch):
-        img, mask = batch
+    def training_step(self, batch, batch_idx):
+        img, label = batch
         img = img.float()
-        mask = mask.long()
+        label = label.long()[:, 0, ...]
         pred = self.forward(img)
-        loss_val = self.loss(pred, mask[:, 0, ...])
-        return {'loss': loss_val}
+        loss_val = self.loss(pred, label)
+
+        if batch_idx % 5 == 0:
+            self.logger.experiment.add_image(
+                "input", img[0, ...], self.global_step
+            )
+            self.logger.experiment.add_image(
+                "label", label[0, ...].unsqueeze(0), self.global_step
+            )
+            self.logger.experiment.add_image(
+                "pred", pred[0, 1, ...].unsqueeze(0), self.global_step
+            )
+
+        out = {'loss': loss_val}
+
+        for key, fcn in self.metrics.items():
+            out[key] = fcn.to(pred.device)(pred[:, 1, ...], label)
+
+        self.log_dict(
+            out, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        return out
 
     def configure_optimizers(self):
-        opt = torch.optim.Adam(
+        opt_cls = torch.optim.__dict__[self.opt]
+        opt = opt_cls(
             self.net.parameters(),
-            lr=self.learning_rate
+            lr=self.learning_rate,
+            **self.opt_kwargs
         )
         # so far no scheduling
         sch = None
@@ -97,11 +136,17 @@ def main():
     seed_everything(conf.training.seed, workers=True)
     model = BinarySegmentation(conf)
 
+    logger = TensorBoardLogger(
+        conf.log.dir, name=conf.name,
+        log_graph=True,
+    )
+
     trainer = Trainer(
         accelerator=options.accelerator,
         devices=[options.devices],
         max_epochs=conf.training.epochs,
-        log_every_n_steps=conf.log.log_every_n_steps
+        log_every_n_steps=conf.log.log_every_n_steps,
+        logger=logger
     )
     trainer.fit(model)
 
