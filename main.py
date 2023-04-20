@@ -18,7 +18,7 @@ import torch.optim
 import torchmetrics
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 from pytorch_lightning.trainer import Trainer
 from torch.utils.data import DataLoader
 
@@ -32,6 +32,7 @@ class BinarySegmentation(pl.LightningModule):
         self.setup_neural_net(conf)
         self.setup_datasets(conf)
         self.setup_training(conf)
+        self.save_hyperparameters()
 
     def setup_training(self, conf):
         self.batch_size = conf.training.batch_size
@@ -173,10 +174,6 @@ class BinarySegmentation(pl.LightningModule):
         )
 
 
-def my_new_fancy_function():
-    pass
-
-
 def main():
     # get sys args
     options = get_sys_args()
@@ -185,17 +182,19 @@ def main():
     seed_everything(conf.training.seed, workers=True)
     model = BinarySegmentation(conf)
 
-    logger = TensorBoardLogger(
+    tb_logger = TensorBoardLogger(
         options.exp_folder, name=conf.log.name,
         log_graph=True,
     )
+    csv_logger = CSVLogger(join(options.exp_folder))
 
     trainer = Trainer(
         accelerator=options.accelerator,
         devices=[options.devices],
         max_epochs=conf.training.epochs,
         log_every_n_steps=conf.log.log_every_n_steps,
-        logger=logger
+        logger=[tb_logger, csv_logger],
+        # profiler="simple"
     )
     trainer.fit(
         model,
@@ -203,11 +202,6 @@ def main():
         model.val_dataloader(),
     )
     trainer.test(dataloaders=model.test_dataloader())
-    log_to_dataframe(join(options.exp_folder, conf.log.name))
-
-
-def log_to_dataframe(path):
-    pass
 
 
 def get_sys_args():
