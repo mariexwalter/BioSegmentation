@@ -48,6 +48,8 @@ class BinarySegmentation(pl.LightningModule):
             'ji': torchmetrics.JaccardIndex('binary', zero_division=.1),
         }
 
+        self.add_im_every_n_steps = conf.log.add_image_every_n_steps
+
     def forward(self, x):
         return self.net(x)
 
@@ -58,7 +60,7 @@ class BinarySegmentation(pl.LightningModule):
         pred = self.forward(img)
         loss_val = self.loss(pred, label)
 
-        if batch_idx % 5 == 0:
+        if batch_idx % self.add_im_every_n_steps == 0:
             self.logger.experiment.add_image(
                 "input", img[0, ...], self.global_step
             )
@@ -80,6 +82,42 @@ class BinarySegmentation(pl.LightningModule):
 
         return out
 
+    def validation_step(self, batch, batch_idx):
+        img, label = batch
+        img = img.float()
+        label = label.long()[:, 0, ...]
+        pred = self.forward(img)
+        loss_val = self.loss(pred, label)
+
+        out = {'val_loss': loss_val}
+
+        for key, fcn in self.metrics.items():
+            out['val_'+key] = fcn.to(pred.device)(pred[:, 1, ...], label)
+
+        self.log_dict(
+            out, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        return out
+
+    def test_step(self, batch, batch_idx):
+        img, label = batch
+        img = img.float()
+        label = label.long()[:, 0, ...]
+        pred = self.forward(img)
+        loss_val = self.loss(pred, label)
+
+        out = {'test_loss': loss_val}
+
+        for key, fcn in self.metrics.items():
+            out['test_'+key] = fcn.to(pred.device)(pred[:, 1, ...], label)
+
+        self.log_dict(
+            out, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        return out
+
     def configure_optimizers(self):
         opt_cls = torch.optim.__dict__[self.opt]
         opt = opt_cls(
@@ -94,6 +132,11 @@ class BinarySegmentation(pl.LightningModule):
     def train_dataloader(self):
         return DataLoader(
             self.data['train'], batch_size=self.batch_size, shuffle=True
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.data['test'], batch_size=self.batch_size, shuffle=False
         )
 
     def test_dataloader(self):
@@ -154,7 +197,12 @@ def main():
         log_every_n_steps=conf.log.log_every_n_steps,
         logger=logger
     )
-    trainer.fit(model)
+    trainer.fit(
+        model,
+        model.train_dataloader(),
+        model.val_dataloader(),
+    )
+    trainer.test(dataloaders=model.test_dataloader())
     log_to_dataframe(join(options.exp_folder, conf.log.name))
 
 
