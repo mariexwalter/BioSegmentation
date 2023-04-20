@@ -1,13 +1,15 @@
 """
 https://github.com/akshaykulkarni07/pl-sem-seg/blob/master/pl_training.ipynb
 
-TODO: logging
 https://pytorch-lightning.readthedocs.io/en/1.6.1/common/loggers.html
+
+# TODO: test data?
 
 """
 from argparse import ArgumentParser
 from os.path import join
 
+import pandas as pd
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
 import torch
@@ -128,6 +130,10 @@ class BinarySegmentation(pl.LightningModule):
         )
 
 
+def my_new_fancy_function():
+    pass
+
+
 def main():
     # get sys args
     options = get_sys_args()
@@ -137,7 +143,7 @@ def main():
     model = BinarySegmentation(conf)
 
     logger = TensorBoardLogger(
-        conf.log.dir, name=conf.name,
+        options.exp_folder, name=conf.log.name,
         log_graph=True,
     )
 
@@ -149,6 +155,11 @@ def main():
         logger=logger
     )
     trainer.fit(model)
+    log_to_dataframe(join(options.exp_folder, conf.log.name))
+
+
+def log_to_dataframe(path):
+    pass
 
 
 def get_sys_args():
