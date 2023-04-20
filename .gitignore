@@ -2,3 +2,6 @@
 /__pycache__
 /data
 /lightning_logs
+experiments/**/events.out.tfevents.*
+experiments/**/*.ckpt
+experiments/**/version_*/hparams.yaml
