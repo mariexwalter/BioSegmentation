@@ -74,7 +74,14 @@ class BreastCancer(FromFolderToRam):
         return (label.mean(-1) > 0.).astype('int32')
 
 class AortaTissue(FromFolderToRam):
-    pass
+    def load_image(self, path):
+        return get_tiff_image(path)
+
+    def load_label(self, path):
+        label = get_tiff_image(path)
+        # RGB image -> to binary image
+        return (label.mean(-1) > 0.5).astype('int32')
+
 
 def get_tiff_image(path, normalized=True, resize=(512, 512)):
     image = io.imread(path)
