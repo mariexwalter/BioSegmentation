@@ -1,10 +1,9 @@
-
 training:
   batch_size: 6
   learning_rate: 0.0001
   seed: 0
   nw: 0
-  epochs: 100
+  epochs: 150
   class_weights: # should be a list
 
 optimizer:
@@ -13,9 +12,11 @@ optimizer:
 
 log:
   log_every_n_steps: 5
-  dir: "experiments"
-  name: "log"
-
+  add_image_every_n_steps: 5 
+  
+predict:
+  tile_size: 256
+  tile_overlap: .5
 
 neuralnet:
   name: "Unet"
@@ -53,3 +54,7 @@ dataset:
       path: "data/aorta_training/Lable"
       ext: ".png"
   
+  predict:
+    load_fcn: "get_tiff_image"
+    path: "data/aorta_training/Image"
+    ext: ".png"
