@@ -11,3 +11,5 @@ https://github.com/qubvel/segmentation_models.pytorch
 Augmentation:
 
 https://pytorch.org/vision/0.15/transforms.html
+
+python main.py --predict --checkpoint_path path/to/exp_folder
