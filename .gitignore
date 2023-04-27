@@ -4,3 +4,4 @@
 /lightning_logs
 **/events.*
 **.ckpt
+**/hparams.yaml
