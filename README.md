@@ -19,3 +19,6 @@ python main.py --exp_folder experiments/000_test
 
 ### to visualize the training
 tensorboard --logdir experiments/
+
+### to predict images without labels
+python main.py --predict --checkpoint_path path/to/exp_folder

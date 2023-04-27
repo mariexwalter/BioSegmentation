@@ -1,26 +1,29 @@
 """
-https://github.com/akshaykulkarni07/pl-sem-seg/blob/master/pl_training.ipynb
-
-https://pytorch-lightning.readthedocs.io/en/1.6.1/common/loggers.html
-
-# TODO: test data?
-
+# TODO: Resume training
+# TODO: Scheduling
+# TODO: predict image -> Tiling might not work properly
 """
+import math
 from argparse import ArgumentParser
-from os.path import join
+from glob import glob
+from os import makedirs
+from os.path import basename, join, splitext
 
-import pandas as pd
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
 import torch
 import torch.nn as nn
 import torch.optim
 import torchmetrics
+import torchvision.transforms.functional as TF
+from blended_tiling import TilingModule
 from omegaconf import OmegaConf
+from PIL import Image
 from pytorch_lightning import seed_everything
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 from pytorch_lightning.trainer import Trainer
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import augmentation
 import datasets
@@ -32,6 +35,9 @@ class BinarySegmentation(pl.LightningModule):
         self.setup_neural_net(conf)
         self.setup_datasets(conf)
         self.setup_training(conf)
+        self.setup_prediction(conf)
+
+        self.save_hyperparameters()
 
     def setup_training(self, conf):
         self.batch_size = conf.training.batch_size
@@ -48,8 +54,44 @@ class BinarySegmentation(pl.LightningModule):
             'ji': torchmetrics.JaccardIndex('binary', zero_division=.1),
         }
 
+        self.add_im_every_n_steps = conf.log.add_image_every_n_steps
+
+    def setup_prediction(self, conf):
+        self.tile_size = conf.predict.tile_size
+        self.tile_overlap = conf.predict.tile_overlap
+
     def forward(self, x):
         return self.net(x)
+
+    def predict_with_tiling(self, image):
+        softmax = nn.Softmax(dim=1)
+        image = TF.to_tensor(image).float()
+
+        tiling_module = TilingModule(
+            tile_size=self.tile_size,
+            tile_overlap=self.tile_overlap,
+            base_size=image.shape[-2:],
+        )
+
+        tiles = tiling_module.split_into_tiles(image.unsqueeze(0))
+
+        num_images = int(math.ceil(tiles.shape[0] / self.batch_size))
+
+        out = []
+        for i in range(num_images):
+            batch = tiles[i*self.batch_size:(i+1)*self.batch_size, ...]
+            if batch.shape[0] == 0:
+                break
+
+            with torch.no_grad():
+                out.append(
+                    softmax(self.forward(batch))[:, 1, ...].unsqueeze(1)
+                )
+
+        out = torch.cat(out, 0)
+        full_tensor = tiling_module.rebuild_with_masks(out)
+        # return as binary image
+        return full_tensor[0, 0, ...].cpu().numpy()
 
     def training_step(self, batch, batch_idx):
         img, label = batch
@@ -58,7 +100,7 @@ class BinarySegmentation(pl.LightningModule):
         pred = self.forward(img)
         loss_val = self.loss(pred, label)
 
-        if batch_idx % 5 == 0: #warum hier durch 5 teilbar?
+        if batch_idx % self.add_im_every_n_steps == 0:
             self.logger.experiment.add_image(
                 "input", img[0, ...], self.global_step
             )
@@ -80,6 +122,42 @@ class BinarySegmentation(pl.LightningModule):
 
         return out
 
+    def validation_step(self, batch, batch_idx):
+        img, label = batch
+        img = img.float()
+        label = label.long()[:, 0, ...]
+        pred = self.forward(img)
+        loss_val = self.loss(pred, label)
+
+        out = {'val_loss': loss_val}
+
+        for key, fcn in self.metrics.items():
+            out['val_'+key] = fcn.to(pred.device)(pred[:, 1, ...], label)
+
+        self.log_dict(
+            out, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        return out
+
+    def test_step(self, batch, batch_idx):
+        img, label = batch
+        img = img.float()
+        label = label.long()[:, 0, ...]
+        pred = self.forward(img)
+        loss_val = self.loss(pred, label)
+
+        out = {'test_loss': loss_val}
+
+        for key, fcn in self.metrics.items():
+            out['test_'+key] = fcn.to(pred.device)(pred[:, 1, ...], label)
+
+        self.log_dict(
+            out, on_step=False, on_epoch=True, prog_bar=True
+        )
+
+        return out
+
     def configure_optimizers(self):
         opt_cls = torch.optim.__dict__[self.opt]
         opt = opt_cls(
@@ -94,6 +172,11 @@ class BinarySegmentation(pl.LightningModule):
     def train_dataloader(self):
         return DataLoader(
             self.data['train'], batch_size=self.batch_size, shuffle=True
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.data['test'], batch_size=self.batch_size, shuffle=False
         )
 
     def test_dataloader(self):
@@ -130,8 +213,29 @@ class BinarySegmentation(pl.LightningModule):
         )
 
 
-def my_new_fancy_function():
-    pass
+def load_model(path_to_checkpoint):
+    model = BinarySegmentation.load_from_checkpoint(path_to_checkpoint)
+    return model.eval()
+
+
+def process_images(model, conf, exp_folder):
+    load_fcn = datasets.__dict__[conf.dataset.predict.load_fcn]
+    to_search = glob(
+        join(conf.dataset.predict.path, '*'+conf.dataset.predict.ext)
+    )
+    assert to_search
+
+    pred_folder = join(exp_folder, 'predictions')
+    makedirs(pred_folder, exist_ok=True)
+
+    for image_path in tqdm(to_search):
+        name = splitext(basename(image_path))[0]
+        image = load_fcn(image_path)
+        segmentation = model.predict_with_tiling(image)
+        segmentation = Image.fromarray(
+            (250*segmentation).astype('uint8'), 'L'
+        )
+        segmentation.save(join(pred_folder, name + '.png'))
 
 
 def main():
@@ -139,32 +243,44 @@ def main():
     options = get_sys_args()
     # load config
     conf = OmegaConf.load(join(options.exp_folder, "config.yaml"))
-    seed_everything(conf.training.seed, workers=True)
-    model = BinarySegmentation(conf)
 
-    logger = TensorBoardLogger(
-        options.exp_folder, name=conf.log.name,
+    if options.checkpoint_path is not None:
+        model = load_model(options.checkpoint_path)
+    else:
+        model = BinarySegmentation(conf)
+
+    if options.predict:
+        process_images(model, conf, options.exp_folder)
+        return None
+
+    seed_everything(conf.training.seed, workers=True)
+    tb_logger = TensorBoardLogger(
+        join(options.exp_folder, 'logs'), name='tb_logs',
         log_graph=True,
     )
+    csv_logger = CSVLogger(join(options.exp_folder, 'logs'))
 
     trainer = Trainer(
         accelerator=options.accelerator,
         devices=[options.devices],
         max_epochs=conf.training.epochs,
         log_every_n_steps=conf.log.log_every_n_steps,
-        logger=logger
+        logger=[tb_logger, csv_logger],
+        # profiler="simple"
     )
-    trainer.fit(model)
-    log_to_dataframe(join(options.exp_folder, conf.log.name))
-
-
-def log_to_dataframe(path):
-    pass
+    trainer.fit(
+        model,
+        model.train_dataloader(),
+        model.val_dataloader(),
+    )
+    trainer.test(dataloaders=model.test_dataloader())
 
 
 def get_sys_args():
     parser = ArgumentParser()
     parser.add_argument("--exp_folder", type=str)
+    parser.add_argument("--checkpoint_path", type=str, default=None)
+    parser.add_argument("--predict", action="store_true")
     parser.add_argument("--accelerator", default="cuda")
     parser.add_argument("--devices", default=0)
     return parser.parse_args()
