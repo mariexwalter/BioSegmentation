@@ -58,7 +58,7 @@ class BinarySegmentation(pl.LightningModule):
         pred = self.forward(img)
         loss_val = self.loss(pred, label)
 
-        if batch_idx % 5 == 0:
+        if batch_idx % 5 == 0: #warum hier durch 5 teilbar?
             self.logger.experiment.add_image(
                 "input", img[0, ...], self.global_step
             )
