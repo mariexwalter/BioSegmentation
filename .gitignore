@@ -6,3 +6,4 @@ experiments/**/events.out.tfevents.*
 experiments/**/*.ckpt
 experiments/**/version_*/hparams.yaml
 experiments/**/predictions/*.png
+**/metrics.csv
