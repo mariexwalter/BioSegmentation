@@ -11,3 +11,11 @@ https://github.com/qubvel/segmentation_models.pytorch
 Augmentation:
 
 https://pytorch.org/vision/0.15/transforms.html
+
+## important commands
+
+### running the training
+python main.py --exp_folder experiments/000_test
+
+### to visualize the training
+tensorboard --logdir experiments/
