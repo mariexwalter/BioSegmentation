@@ -1,0 +1,67 @@
+training:
+  batch_size: 6
+  learning_rate: 0.0001
+  seed: 0
+  nw: 0
+  epochs: 150
+  class_weights: # should be a list
+
+optimizer:
+  name: "Adam"
+  kwargs: # kwargs for a particular optimizer
+
+log:
+  log_every_n_steps: 5
+  add_image_every_n_steps: 5 
+  
+predict:
+  tile_size: 256
+  tile_overlap: .5
+
+neuralnet:
+  name: "Unet"
+  encoder_name: "resnet18"
+  encoder_weights:
+  in_channels: 3
+  classes: 2
+
+dataset:
+  name: "BreastCancer"
+  
+  input_shape:
+    - 1
+    - 3
+    - 416
+    - 416
+
+  augmentation: 
+    name: "default"
+    crop_size: 416
+
+  train: 
+    images: 
+      path: "data/aorta_training_10/Image"
+      ext: ".png"
+    labels:
+      path: "data/aorta_training_10/Lable"
+      ext: ".png"
+  
+  test: 
+    images: 
+      path: "data/aorta_test_10/Img_test"
+      ext: ".png"
+    labels:
+      path: "data/aorta_test_10/Lable_test"
+      ext: ".png"
+  
+  predict:
+    load_fcn: "get_tiff_image"
+    path: "data/aorta_training_10/Image"
+    ext: ".png"
+
+    # #trainingsbilder = 10, #testbilder = 3
+    # acc = 0.885/0.864
+    # ji = 0.454/0.32
+    # loss = 0.304/0.33
+    # vergessen zu speichern, musste die Bildauswahl neu machen. JI nur extrem abgefallen -> scheint extrem von der Wahl
+    # der Bilder abzuhängen. Versuche Subsampling/Bootstrapping...
