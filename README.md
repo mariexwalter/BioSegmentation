@@ -15,10 +15,13 @@ https://pytorch.org/vision/0.15/transforms.html
 ## important commands
 
 ### running the training
-python main.py --exp_folder experiments/000_test
+python main.py --exp_folder experiments/test_01
 
 ### to visualize the training
 tensorboard --logdir experiments/
+
+### change port
+--port 6009
 
 ### to predict images without labels
 python main.py --predict --checkpoint_path path/to/exp_folder

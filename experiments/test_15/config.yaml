@@ -1,0 +1,66 @@
+training:
+  batch_size: 6
+  learning_rate: 0.0001
+  seed: 0
+  nw: 0
+  epochs: 450
+  class_weights: # should be a list
+
+optimizer:
+  name: "Adam"
+  kwargs: # kwargs for a particular optimizer
+
+log:
+  log_every_n_steps: 5
+  add_image_every_n_steps: 5 
+  
+predict:
+  tile_size: 256
+  tile_overlap: .5
+
+neuralnet:
+  name: "Unet"
+  encoder_name: "resnet18"
+  encoder_weights:
+  in_channels: 3
+  classes: 2
+
+dataset:
+  name: "BreastCancer"
+  
+  input_shape:
+    - 1
+    - 3
+    - 416
+    - 416
+
+  augmentation: 
+    name: "default"
+    crop_size: 416
+
+  train: 
+    images: 
+      path: "data/aorta_training_15/Image"
+      ext: ".png"
+    labels:
+      path: "data/aorta_training_15/Lable"
+      ext: ".png"
+  
+  test: 
+    images: 
+      path: "data/aorta_test_15/Img_test"
+      ext: ".png"
+    labels:
+      path: "data/aorta_test_15/Lable_test"
+      ext: ".png"
+  
+  predict:
+    load_fcn: "get_tiff_image"
+    path: "data/aorta_training_15/Image"
+    ext: ".png"
+
+    # #trainingsbilder = 15, #testbilder = 5
+    # epoch = 450
+    # acc = 0.888
+    # ji = 0.455
+    # loss = 0.370

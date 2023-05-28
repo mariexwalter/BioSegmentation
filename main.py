@@ -40,13 +40,29 @@ class BinarySegmentation(pl.LightningModule):
         self.save_hyperparameters()
 
     def setup_training(self, conf):
+        # For some reason, there are problems with seeding and using xent-loss, because a subfunction is not deterministic
+        # This is a work-around proposed in:
+        # https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/8
+        xent = nn.CrossEntropyLoss(weight=conf.training.class_weights, reduction="none")
+        def loss(x,y):
+            loss = xent(x,y)
+            return loss.mean()
+        
+        self.loss = loss
         self.batch_size = conf.training.batch_size
         self.learning_rate = conf.training.learning_rate
-        self.loss = nn.CrossEntropyLoss(weight=conf.training.class_weights)
         self.opt = conf.optimizer.name
         self.opt_kwargs = (
             conf.optimizer.kwargs if conf.optimizer.kwargs is not None else {}
         )
+        if "scheduler" in conf.optimizer.keys():
+            self.sched = conf.optimizer.scheduler    
+            self.sched_kwargs = (
+                conf.optimizer.sched_kwargs if conf.optimizer.sched_kwargs is not None else {}
+            )
+        else:
+            self.sched = None    
+
         self.example_input_array = torch.zeros(*conf.dataset.input_shape)
 
         self.metrics = {
@@ -165,8 +181,13 @@ class BinarySegmentation(pl.LightningModule):
             lr=self.learning_rate,
             **self.opt_kwargs
         )
-        # so far no scheduling
-        sch = None
+
+        if self.sched is not None:
+            # could be, e.g., MultiStepLR
+            scheduler_cls = torch.optim.lr_scheduler.__dict__[self.sched]
+            scheduler = scheduler_cls(opt, **self.sched_kwargs)
+            return [opt], [scheduler]
+
         return [opt]
 
     def train_dataloader(self):
@@ -242,6 +263,8 @@ def main():
     # get sys args
     options = get_sys_args()
     # load config
+    print(f"Trying to load { join(options.exp_folder, 'config.yaml') }")
+
     conf = OmegaConf.load(join(options.exp_folder, "config.yaml"))
 
     if options.checkpoint_path is not None:
@@ -266,6 +289,7 @@ def main():
         max_epochs=conf.training.epochs,
         log_every_n_steps=conf.log.log_every_n_steps,
         logger=[tb_logger, csv_logger],
+        deterministic=True,
         # profiler="simple"
     )
     trainer.fit(
